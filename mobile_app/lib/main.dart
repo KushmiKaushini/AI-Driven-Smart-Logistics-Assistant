@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:io' show Platform;
+
 
 void main() {
   runApp(const LogisticsApp());
@@ -36,12 +38,12 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   late GoogleMapController mapController;
-  late IO.Socket socket;
+  late io.Socket socket;
   
   final LatLng _center = const LatLng(6.9271, 79.8612); // Colombo
   final Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
-  List<LatLng> _routePoints = [];
+  final List<LatLng> _routePoints = [];
   
   bool _isOptimizing = false;
   String _statusMessage = "Ready to optimize";
@@ -55,10 +57,14 @@ class _MapScreenState extends State<MapScreen> {
 
   void _initSocket() {
     // Replace with your Flask server IP if running on a real device
-    socket = IO.io('http://10.0.2.2:5000', <String, dynamic>{
+    // Use localhost for Windows, 10.0.2.2 for Android emulator
+    final String backendUrl = Platform.isWindows ? 'http://localhost:5000' : 'http://10.0.2.2:5000';
+    
+    socket = io.io(backendUrl, <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': false,
     });
+
 
     socket.connect();
 
@@ -110,14 +116,18 @@ class _MapScreenState extends State<MapScreen> {
 
     try {
       // 1. Fetch initial optimization from REST API
+      // Use platform-aware backend URL
+      final String backendUrl = Platform.isWindows ? 'http://localhost:5000' : 'http://10.0.2.2:5000';
+      
       final response = await http.post(
-        Uri.parse('http://10.0.2.2:5000/api/optimize'),
+        Uri.parse('$backendUrl/api/optimize'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'origin': 'Colombo Fort',
           'destination': 'Kollupitiya',
         }),
       );
+
 
       if (response.statusCode == 200) {
         final result = jsonDecode(response.body);
@@ -162,9 +172,9 @@ class _MapScreenState extends State<MapScreen> {
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.7),
+                color: Colors.black.withValues(alpha: 0.7),
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white.withOpacity(0.2)),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
