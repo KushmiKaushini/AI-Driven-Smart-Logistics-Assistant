@@ -11,9 +11,17 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'secret!')
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Initialize Google Maps client
-# Note: User will need to provide their own GOOGLE_MAPS_API_KEY
-gmaps = googlemaps.Client(key=os.getenv('GOOGLE_MAPS_API_KEY', ''))
+# Initialize Google Maps client (optional — runs with mock data if no key)
+api_key = os.getenv('GOOGLE_MAPS_API_KEY', '')
+gmaps = None
+if api_key and api_key != 'YOUR_GOOGLE_MAPS_API_KEY_HERE':
+    try:
+        gmaps = googlemaps.Client(key=api_key)
+        print("[OK] Google Maps API connected.")
+    except ValueError:
+        print("[WARN] Invalid Google Maps API key. Running with mock traffic data.")
+else:
+    print("[WARN] No Google Maps API key set. Running with mock traffic data.")
 
 def get_realtime_traffic(origin, destination):
     """
@@ -82,4 +90,4 @@ def handle_route_sync(data):
         print(f"Emitted: {step}")
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True, port=5000)
+    socketio.run(app, debug=True, port=5000, allow_unsafe_werkzeug=True)
