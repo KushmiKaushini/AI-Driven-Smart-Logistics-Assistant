@@ -4,7 +4,6 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'dart:io' show Platform;
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -91,6 +90,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   int _routeStepsReceived = 0;
   int _totalRouteSteps = 0;
 
+  bool _isDisposing = false;
+
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
 
@@ -112,6 +113,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _isDisposing = true;
     _pulseController.dispose();
     _socket?.disconnect();
     _socket?.dispose();
@@ -122,20 +124,19 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   // ─── Socket Setup ──────────────────────────────────────────────────────────
 
   void _initSocket() {
+    if (!mounted) return;
     setState(() => _connectionStatus = ConnectionStatus.connecting);
 
     _socket = io.io(backendUrl, <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': false,
       'reconnection': true,
-      'reconnectionAttempts': 5,
-      'reconnectionDelay': 2000,
+      'reconnectionAttempts': 3,
+      'reconnectionDelay': 1000,
     });
 
-    _socket!.connect();
-
     _socket!.onConnect((_) {
-      if (!mounted) return;
+      if (_isDisposing || !mounted) return;
       setState(() {
         _connectionStatus = ConnectionStatus.connected;
         _statusMessage = 'Connected to AI Engine';
@@ -143,27 +144,31 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     });
 
     _socket!.onDisconnect((_) {
-      if (!mounted) return;
+      if (_isDisposing || !mounted) return;
       setState(() {
         _connectionStatus = ConnectionStatus.disconnected;
         _statusMessage = 'Disconnected from server';
       });
     });
 
-    _socket!.onConnectError((_) {
-      if (!mounted) return;
+    _socket!.onConnectError((error) {
+      if (_isDisposing || !mounted) return;
       setState(() {
         _connectionStatus = ConnectionStatus.disconnected;
         _statusMessage = 'Cannot reach backend server';
       });
+      print('[SOCKET] Connection error: $error');
     });
 
     _socket!.on('route_update', _handleRouteUpdate);
     _socket!.on('route_complete', _handleRouteComplete);
+    _socket!.on('route_error', _handleRouteError);
+
+    _socket!.connect();
   }
 
   void _handleRouteUpdate(dynamic data) {
-    if (!mounted) return;
+    if (_isDisposing || !mounted) return;
 
     final lat = (data['lat'] as num).toDouble();
     final lng = (data['lng'] as num).toDouble();
@@ -192,10 +197,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   void _handleRouteComplete(dynamic data) {
-    if (!mounted) return;
+    if (_isDisposing || !mounted) return;
     setState(() {
       _optimizationState = OptimizationState.completed;
       _statusMessage = 'Route optimized successfully!';
+      _totalRouteSteps = _routeStepsReceived;
     });
 
     // Fit camera to show entire route
@@ -207,7 +213,21 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     }
   }
 
+  void _handleRouteError(dynamic data) {
+    if (_isDisposing || !mounted) return;
+    final errorMessage = data is Map ? data['error'] as String? : null;
+    setState(() {
+      _optimizationState = OptimizationState.error;
+      _statusMessage = errorMessage ?? 'Route streaming error';
+    });
+  }
+
   LatLngBounds _calculateBounds(List<LatLng> points) {
+    if (points.isEmpty) return LatLngBounds(
+      southwest: kColomboCenter,
+      northeast: kColomboCenter,
+    );
+
     double minLat = points.first.latitude;
     double maxLat = points.first.latitude;
     double minLng = points.first.longitude;
@@ -240,6 +260,20 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       _totalRouteSteps = 0;
     });
 
+    // Ensure socket is connected
+    if (_socket == null || !_socket!.connected) {
+      _initSocket();
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (_socket == null || !_socket!.connected) {
+        if (!mounted) return;
+        setState(() {
+          _optimizationState = OptimizationState.error;
+          _statusMessage = 'Socket connection failed';
+        });
+        return;
+      }
+    }
+
     try {
       final response = await http
           .post(
@@ -257,29 +291,51 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       if (response.statusCode == 200) {
         final result = jsonDecode(response.body) as Map<String, dynamic>;
 
-        setState(() {
-          _optimizationState = OptimizationState.streaming;
-          _fuelSaved = result['fuel_saved'] as String? ?? '';
-          _estimatedTime = result['estimated_time'] as String? ?? '';
-          _statusMessage = 'Route found! Streaming coordinates...';
+        if (result['status'] == 'success') {
+          setState(() {
+            _optimizationState = OptimizationState.streaming;
+            _fuelSaved = result['fuel_saved'] as String? ?? '';
+            _estimatedTime = result['estimated_time'] as String? ?? '';
+            _statusMessage = 'Route found! Streaming coordinates...';
 
-          final route = result['optimized_route'] as List<dynamic>?;
-          _totalRouteSteps = route?.length ?? 0;
-        });
+            final route = result['optimized_route'] as List<dynamic>?;
+            _totalRouteSteps = route?.length ?? 0;
+          });
 
-        // Request real-time coordinate streaming
-        _socket?.emit('request_route_sync', {'route_id': 'colombo_opt_001'});
+          // Request real-time coordinate streaming
+          _socket?.emit('request_route_sync', {'route_id': 'colombo_opt_001'});
+        } else {
+          throw Exception(result['error'] ?? 'Invalid response format');
+        }
+      } else if (response.statusCode >= 500) {
+        throw Exception('Server error (${response.statusCode})');
       } else {
-        setState(() {
-          _optimizationState = OptimizationState.error;
-          _statusMessage = 'Server error (${response.statusCode})';
-        });
+        throw Exception('Unexpected status code: ${response.statusCode}');
       }
+    } on http.ClientException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _optimizationState = OptimizationState.error;
+        _statusMessage = 'Backend unreachable. Check if server is running.';
+      });
+      print('[HTTP] Client error: $e');
+    } on SocketException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _optimizationState = OptimizationState.error;
+        _statusMessage = 'Network error: ${e.message}';
+      });
+    } on TimeoutException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _optimizationState = OptimizationState.error;
+        _statusMessage = 'Request timeout';
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _optimizationState = OptimizationState.error;
-        _statusMessage = 'Error: ${e is http.ClientException ? 'Backend unreachable' : e.toString()}';
+        _statusMessage = 'Error: ${e.toString()}';
       });
     }
   }
@@ -591,7 +647,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           ClipRRect(
             borderRadius: BorderRadius.circular(10),
             child: LinearProgressIndicator(
-              value: _routeStepsReceived / _totalRouteSteps,
+              value: _totalRouteSteps > 0 ? _routeStepsReceived / _totalRouteSteps : null,
               backgroundColor: AppColors.surface.withValues(alpha: 0.8),
               color: AppColors.primary,
               minHeight: 4,
