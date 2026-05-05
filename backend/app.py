@@ -76,18 +76,21 @@ def handle_route_sync(data):
     """
     print(f"Received sync request: {data}")
     
-    # Simulate streaming of coordinates
+    # Simulate streaming of coordinates with labels
     steps = [
-        {"lat": 6.9271, "lng": 79.8612},
-        {"lat": 6.9280, "lng": 79.8550},
-        {"lat": 6.9300, "lng": 79.8480},
-        {"lat": 6.9319, "lng": 79.8430}
+        {"lat": 6.9271, "lng": 79.8612, "label": "Colombo Fort (Start)"},
+        {"lat": 6.9280, "lng": 79.8550, "label": "Pettah Junction"},
+        {"lat": 6.9300, "lng": 79.8480, "label": "Port City Bypass"},
+        {"lat": 6.9319, "lng": 79.8430, "label": "Kollupitiya (End)"}
     ]
     
     for step in steps:
-        time.sleep(2)  # Simulate real-time delay
+        time.sleep(1.5)  # Simulate real-time delay
         emit('route_update', step)
         print(f"Emitted: {step}")
+    
+    # Signal route streaming is complete
+    emit('route_complete', {"total_steps": len(steps)})
 
 if __name__ == '__main__':
     socketio.run(app, debug=True, port=5000, allow_unsafe_werkzeug=True)
