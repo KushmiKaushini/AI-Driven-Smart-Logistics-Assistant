@@ -1,46 +1,105 @@
-# AI-Driven Smart Logistics Assistant (React Native Migration)
+# AI-Driven Smart Logistics Assistant 🚚
 
-This project has been migrated from **Flutter** to **React Native (Expo)** to leverage a more extensive JS-based ecosystem while maintaining high performance and a premium look.
+A premium, real-time route optimization platform for logistics operations in Colombo, Sri Lanka. This project features a state-of-the-art **React Native** frontend integrated with a traffic-aware **Flask** backend.
 
-## 🚀 Overview
-The Smart Logistics Assistant is a real-time route optimization platform designed for logistics in Sri Lanka. It uses traffic-aware AI processing to calculate the most efficient routes, saving fuel and time.
+---
 
-## 🛠 Tech Stack
-*   **Mobile App**: React Native (Expo), Lucide Icons, React Native Maps
-*   **Backend**: Python (Flask), Flask-SocketIO
-*   **AI Engine**: Google Maps Distance Matrix API
-*   **Real-time**: Socket.IO
+## 🌟 Key Features
+*   **Real-Time Route Streaming**: Live coordinate synchronization via Socket.IO.
+*   **AI-Powered Optimization**: Traffic-aware routing using Google Maps Distance Matrix.
+*   **Premium Glassmorphism UI**: High-fidelity interface with frosted-glass effects and Lucide icons.
+*   **High Performance**: React Native optimized with `useMemo` for smooth map interactions.
+*   **Fuel Efficiency**: Real-time fuel saving estimations based on traffic density.
 
-## 📁 Project Structure
-*   `react_native_app/`: The core React Native mobile application.
-*   `backend/`: Python Flask server for route optimization and real-time streaming.
-*   `mobile_app/`: Legacy Flutter implementation (for reference).
+---
+
+## 🛠 Technology Stack
+
+### Frontend (Mobile)
+*   **Framework**: React Native (Expo)
+*   **Maps**: React Native Maps (Google Maps Provider)
+*   **Real-time**: Socket.IO Client
+*   **Styling**: Expo Blur (Glassmorphism), Lucide Icons
+
+### Backend (API)
+*   **Framework**: Flask (Python 3.10+)
+*   **Real-time**: Flask-SocketIO
+*   **Geospatial**: Google Maps Python Client
+
+---
+
+## 📂 Project Architecture
+
+The project follows a professional, decoupled architecture for scalability:
+
+```
+/react_native_app
+  ├── /src
+  │    ├── /components    # Glassmorphic UI & reusable elements
+  │    ├── /screens       # MapScreen & Logistics Dashboard
+  │    ├── /services      # Axios API & Socket.IO initialization
+  │    ├── /hooks         # Real-time synchronization logic
+  │    ├── /theme         # Centralized color tokens
+  │    └── /constants     # Map styles & app configurations
+  └── App.js              # Clean entry point
+/backend
+  ├── app.py              # Flask server & SocketIO logic
+  └── .env                # API Keys & Secrets
+/mobile_app               # Legacy Flutter implementation
+```
+
+---
 
 ## 🚦 Getting Started
 
-### 1. Backend (Flask)
+### 1. Prerequisites
+*   Node.js & npm
+*   Python 3.10+
+*   Google Maps API Key (Distance Matrix & Maps SDK enabled)
+
+### 2. Backend Setup
 ```bash
 cd backend
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
-Create a `.env` file in the `backend/` directory with your `GOOGLE_MAPS_API_KEY`.
-
+Configure your `.env` file:
+```env
+GOOGLE_MAPS_API_KEY=your_api_key_here
+SECRET_KEY=your_secure_random_key
+```
 Run the server:
 ```bash
 python app.py
 ```
 
-### 2. Mobile App (React Native)
+### 3. Mobile App Setup (React Native)
 ```bash
 cd react_native_app
 npm install
+```
+Configure your Google Maps API key in `react_native_app/app.json`:
+```json
+"android": {
+  "config": {
+    "googleMaps": {
+      "apiKey": "YOUR_KEY_HERE"
+    }
+  }
+}
+```
+Run the application:
+```bash
 npx expo start
 ```
 
-## 🎨 Features
-*   **Real-time Traffic**: Ingests live data for Colombo areas.
-*   **Fuel Optimization**: ML-based route calculation.
-*   **Live Sync**: WebSockets stream coordinates directly to the map.
-*   **Premium UI**: Glassmorphic components and smooth transitions.
+---
+
+## 🛡 Security & Audit
+The codebase has undergone a full security audit. Vulnerabilities in sub-dependencies (like `postcss`) have been resolved using npm overrides in the `package.json` to ensure a secure, production-ready environment.
+
+---
+
+## 📝 License
+MIT License. Developed for Advanced Smart Logistics.
