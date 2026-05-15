@@ -1,11 +1,14 @@
 import os
 import asyncio
+import time
 from functools import wraps
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 import googlemaps
 from dotenv import load_dotenv
+from collections import defaultdict
+from datetime import datetime, timedelta
 
 load_dotenv()
 
@@ -20,7 +23,18 @@ if not app.config['SECRET_KEY'] or app.config['SECRET_KEY'] == 'replace_with_sec
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max payload
 
 # CORS configuration - restrict to specific origins in production
-cors_origins = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:5000').split(',')
+cors_origins_str = os.getenv('CORS_ALLOWED_ORIGINS')
+if cors_origins_str:
+    cors_origins = cors_origins_str.split(',')
+else:
+    # Default to localhost only in development
+    cors_origins = ['http://localhost:5000', 'http://localhost:3000', 'http://127.0.0.1:5000']
+    if os.getenv('FLASK_ENV') == 'production':
+        raise ValueError(
+            "CORS_ALLOWED_ORIGINS must be configured in production. "
+            "Set it in backend/.env or run: export CORS_ALLOWED_ORIGINS='https://yourdomain.com'"
+        )
+
 CORS(app, origins=cors_origins, supports_credentials=True)
 
 socketio = SocketIO(app, cors_allowed_origins=cors_origins, async_mode='threading')
@@ -57,6 +71,49 @@ def validate_json(required_fields: list):
     return decorator
 
 
+# Rate limiting storage
+rate_limit_data = defaultdict(list)
+
+def get_client_ip(request):
+    """Extract client IP address from request."""
+    return request.headers.get('X-Forwarded-For', request.remote_addr or '127.0.0.1')
+
+def rate_limit(max_requests: int = 10, window_seconds: int = 60):
+    """
+    Rate limiting decorator.
+    Args:
+        max_requests: Maximum number of requests allowed in the window
+        window_seconds: Time window in seconds
+    """
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            client_ip = get_client_ip(request)
+            now = datetime.now()
+            cutoff = now - timedelta(seconds=window_seconds)
+
+            # Clean old entries
+            rate_limit_data[client_ip] = [
+                timestamp for timestamp in rate_limit_data[client_ip]
+                if timestamp > cutoff
+            ]
+
+            # Check if rate limited
+            if len(rate_limit_data[client_ip]) >= max_requests:
+                return jsonify({
+                    'error': 'Rate limit exceeded',
+                    'message': f'Maximum {max_requests} requests per {window_seconds} seconds',
+                    'retry_after': window_seconds
+                }), 429
+
+            # Record this request
+            rate_limit_data[client_ip].append(now)
+
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+
 def async_sleep(seconds: float):
     """Non-blocking sleep for async operations."""
     return asyncio.sleep(seconds)
@@ -71,7 +128,7 @@ def get_realtime_traffic(origin: str, destination: str):
         return None
 
     try:
-        now = int(os.time.time())
+        now = int(time.time())
         result = gmaps.distance_matrix(
             origin,
             destination,
@@ -140,6 +197,7 @@ def optimize_route(data: dict) -> dict:
 
 
 @app.route('/api/optimize', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=60)  # 10 requests per 60 seconds
 @validate_json(['origin', 'destination'])
 def handle_optimization_request():
     """Handle route optimization requests with input validation."""
