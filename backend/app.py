@@ -22,6 +22,20 @@ if not app.config['SECRET_KEY'] or app.config['SECRET_KEY'] == 'replace_with_sec
 
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max payload
 
+# SECRET_KEY validation
+if not os.getenv('SECRET_KEY') or os.getenv('SECRET_KEY') == 'replace_with_secure_random_key':
+    if os.getenv('FLASK_ENV') == 'production':
+        raise ValueError(
+            "SECRET_KEY must be configured in production. "
+            "Set it in backend/.env or run: python -c \"import secrets; print(secrets.token_hex(32))\""
+        )
+    else:
+        # Use a fixed key for development (not secure for production!)
+        app.config['SECRET_KEY'] = 'dev-secret-key-change-in-production'
+        print("[WARN] Using default SECRET_KEY - this is insecure for production!")
+else:
+    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
+
 # CORS configuration - restrict to specific origins in production
 cors_origins_str = os.getenv('CORS_ALLOWED_ORIGINS')
 if cors_origins_str:
